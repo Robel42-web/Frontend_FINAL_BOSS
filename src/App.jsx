@@ -80,22 +80,24 @@ function ProtectedDashboard({
   onActualizarOrden,
 }) {
   const { user, loading } = useAuth();
-  const [negocios, setNegocios] = useState([NEGOCIO_DEMO]);
-  const [negocioActivoId, setNegocioActivoId] = useState(1);
+  const [negocios, setNegocios] = useState([]);
+  const [negocioActivoId, setNegocioActivoId] = useState(null);
 
   useEffect(() => {
-    if (!user) return;
     api
       .get('/api/establecimientos')
       .then(({ data }) => {
-        const lista = data.data ?? data;
-        if (Array.isArray(lista) && lista.length > 0) {
-          setNegocios(lista);
+        const lista = Array.isArray(data) ? data : data.data ?? [];
+        setNegocios(lista);
+        if (lista.length > 0) {
           setNegocioActivoId(lista[0].id);
         }
       })
-      .catch(() => {});
-  }, [user]);
+      .catch(() => {
+        setNegocios([]);
+        setNegocioActivoId(null);
+      });
+  }, []);
 
   if (loading) {
     return (
@@ -136,9 +138,11 @@ function ProtectedDashboard({
           path="establecimiento"
           element={
             <Establecimiento
+              negocios={negocios}
               negocioActivo={negocioActivo}
-              onGuardarNegocio={handleGuardarNegocio}
-              onCrearNuevo={handleCrearNuevo}
+              onActualizarNegocio={handleGuardarNegocio}
+              onCrearNegocio={handleCrearNuevo}
+              onSeleccionarNegocio={(neg) => setNegocioActivoId(neg.id)}
             />
           }
         />

@@ -7,9 +7,21 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8001',
-      '/sanctum': 'http://localhost:8001',
-      '/auth/google': 'http://localhost:8001',
+      '/api': {
+        target: 'https://repairhub-api-1zjp.onrender.com',
+        changeOrigin: true,
+        secure: true,
+      },
+      '/sanctum': {
+        target: 'https://repairhub-api-1zjp.onrender.com',
+        changeOrigin: true,
+        secure: true,
+      },
+      '/auth/google': {
+        target: 'https://repairhub-api-1zjp.onrender.com',
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
 })

@@ -26,54 +26,9 @@ const CATEGORIAS = [
   { id: 'electronica', label: 'Electrónica y consolas', icon: Cpu },
 ];
 
-const TALLERES_DEMO = [
-  {
-    id: 1,
-    nombre: 'TechFix Celaya',
-    slug: 'techfix-celaya',
-    categoria: 'computo',
-    categoria_label: 'Celulares y cómputo',
-    descripcion:
-      'Servicio técnico especializado en reparación de laptops, smartphones, tabletas y mantenimiento preventivo con garantía por escrito.',
-    direccion: 'Av. Tecnológico #450, Col. Centro, Celaya, Gto.',
-    telefono: '461 234 5678',
-    horario_resumen: 'Lun - Vie 09:00 - 18:00 · Sáb 09:00 - 14:00',
-    servicios_destacados: ['Cambio de pantalla', 'Mantenimiento preventivo', 'Reemplazo de batería'],
-    activo: true,
-  },
-  {
-    id: 2,
-    nombre: 'Servicio Automotriz El Bajío',
-    slug: 'automotriz-el-bajio',
-    categoria: 'automotriz',
-    categoria_label: 'Taller mecánico',
-    descripcion:
-      'Diagnóstico por escáner, afinación mayor, frenos, suspensión y mecánica general para autos nacionales e importados.',
-    direccion: 'Blvd. Adolfo López Mateos #1120, Celaya, Gto.',
-    telefono: '461 612 9045',
-    horario_resumen: 'Lun - Vie 08:30 - 18:30 · Sáb 09:00 - 14:00',
-    servicios_destacados: ['Diagnóstico por escáner', 'Afinación completa', 'Revisión de frenos'],
-    activo: true,
-  },
-  {
-    id: 3,
-    nombre: 'Clima y Línea Blanca Express',
-    slug: 'linea-blanca-express',
-    categoria: 'electrodomesticos',
-    categoria_label: 'Lavadoras y línea blanca',
-    descripcion:
-      'Reparación a domicilio y en taller de lavadoras, secadoras, refrigeradores y hornos de microondas de todas las marcas.',
-    direccion: 'Calle Ignacio Allende #215, Zona Centro, Celaya, Gto.',
-    telefono: '461 198 4432',
-    horario_resumen: 'Lun - Sáb 09:00 - 19:00',
-    servicios_destacados: ['Reparación de transmisión', 'Carga de gas refrigerante', 'Cambio de bomba'],
-    activo: true,
-  },
-];
-
 export default function Inicio({ negociosExtra = [] }) {
   const navigate = useNavigate();
-  const [talleres, setTalleres] = useState(TALLERES_DEMO);
+  const [talleres, setTalleres] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [categoriaActiva, setCategoriaActiva] = useState('todos');
   const [tokenSeguimiento, setTokenSeguimiento] = useState('');
@@ -82,9 +37,23 @@ export default function Inicio({ negociosExtra = [] }) {
     api
       .get('/api/public/establecimientos')
       .then(({ data }) => {
-        const lista = data.data ?? data;
-        if (Array.isArray(lista) && lista.length > 0) {
-          setTalleres(lista);
+        const lista = Array.isArray(data) ? data : data?.data || [];
+        if (lista.length > 0) {
+          const reales = lista.map((t) => ({
+            ...t,
+            categoria: t.categoria || 'computo',
+            categoria_label: t.categoria_label || 'Celulares y cómputo',
+            descripcion: t.descripcion || 'Servicio técnico especializado y mantenimiento.',
+            direccion: t.direccion || 'Celaya, Gto.',
+            telefono: t.telefono || 'Sin teléfono público',
+            horario_resumen: t.horario_resumen || 'Lun - Vie 09:00 - 18:00',
+            servicios_destacados: Array.isArray(t.servicios)
+              ? t.servicios.map((s) => (typeof s === 'string' ? s : s.nombre))
+              : t.servicios_destacados || [],
+            activo: t.activo !== false,
+          }));
+
+          setTalleres(reales);
         }
       })
       .catch(() => {

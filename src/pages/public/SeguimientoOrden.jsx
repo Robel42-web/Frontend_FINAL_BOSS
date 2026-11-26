@@ -1,257 +1,252 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  ShieldCheck,
-  Wrench,
   CheckCircle2,
-  XCircle,
   Clock,
   FileText,
-  DollarSign,
-  ArrowRight,
+  Image as ImageIcon,
+  ShieldCheck,
+  Wrench,
 } from 'lucide-react';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
 
-const PASOS_FLUJO = [
-  { key: 'diagnostico', label: 'Diagnóstico técnico' },
-  { key: 'cotizacion_pendiente', label: 'Cotización' },
-  { key: 'en_reparacion', label: 'En reparación' },
-  { key: 'listo', label: 'Listo para entrega' },
-];
-
-export default function SeguimientoOrden({ ordenes = [], onResponderCotizacion }) {
-  const { token } = useParams();
-  const { user } = useAuth();
+export default function SeguimientoOrden() {
+  const params = useParams();
+  const folio = Object.values(params)[0] || '';
   const [orden, setOrden] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [cargando, setCargando] = useState(true);
+  const [requiereLogin, setRequiereLogin] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    api
-      .get(`/api/public/seguimiento/${token}`)
-      .then(({ data }) => {
-        setOrden(data.data ?? data);
-      })
-      .catch(() => {
-        const limpia = decodeURIComponent(token || '').replace(/^#/, '').toLowerCase();
-        const encontrada = ordenes.find(
-          (o) => o.folio?.toLowerCase() === limpia
-        );
-        setOrden(encontrada || ordenes[0] || null);
-      })
-      .finally(() => setLoading(false));
-  }, [token, ordenes]);
+    if (!folio) {
+      setCargando(false);
+      return;
+    }
+    let activo = true;
 
-  const responderCotizacion = async (decision) => {
-    if (!orden) return;
-    try {
-      await api.post(`/api/public/seguimiento/${token}/cotizacion`, {
-        decision,
-      });
-    } catch {
-      // Actualización optimista local
+    async function cargarOrden() {
+      setCargando(true);
+      setRequiereLogin(false);
+
+      try {
+        // 1. Intentar consultar en el portal del cliente autenticado
+        const { data: listaPortal } = await api.get('/api/portal/ordenes');
+        const encontrada = Array.isArray(listaPortal)
+          ? listaPortal.find(
+              (o) => o.folio?.toLowerCase() === folio?.toLowerCase()
+            )
+          : null;
+
+        if (encontrada) {
+          const { data: detalle } = await api.get(
+            `/api/portal/ordenes/${encontrada.id}`
+          );
+          if (activo) setOrden(detalle);
+          return;
+        }
+      } catch (err) {
+        if (err.response?.status === 401) {
+          if (activo) setRequiereLogin(true);
+        }
+      }
+
+      // 2. Respaldo: buscar en los establecimientos del usuario (vista previa del taller)
+      try {
+        const { data: talleres } = await api.get('/api/establecimientos');
+        if (Array.isArray(talleres)) {
+          for (const taller of talleres) {
+            const { data: ordenesTaller } = await api.get(
+              `/api/establecimientos/${taller.id}/ordenes`
+            );
+            const match = Array.isArray(ordenesTaller)
+              ? ordenesTaller.find(
+                  (o) => o.folio?.toLowerCase() === folio?.toLowerCase()
+                )
+              : null;
+
+            if (match) {
+              const { data: detalleTaller } = await api.get(
+                `/api/establecimientos/${taller.id}/ordenes/${match.id}`
+              );
+              if (activo) setOrden(detalleTaller);
+              return;
+            }
+          }
+        }
+      } catch {
+        // Si tampoco tiene sesión de taller, queda en null
+      } finally {
+        if (activo) setCargando(false);
+      }
     }
 
-    const nuevoEstadoOrden =
-      decision === 'aprobada' ? 'en_reparacion' : 'diagnostico';
-
-    const actualizada = {
-      ...orden,
-      cotizacion_estado: decision,
-      estado: nuevoEstadoOrden,
+    cargarOrden();
+    return () => {
+      activo = false;
     };
-    setOrden(actualizada);
-    if (onResponderCotizacion) {
-      onResponderCotizacion(orden.id, decision, nuevoEstadoOrden);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!orden) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-slate-900">Orden no encontrada</h1>
-        <p className="text-sm text-slate-600 max-w-md">
-          Verifica que el código de seguimiento sea correcto o comunícate directamente con tu
-          taller.
-        </p>
-        <Link
-          to="/"
-          className="px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
-        >
-          Volver al inicio
-        </Link>
-      </div>
-    );
-  }
-
-  const indicePasoActual = PASOS_FLUJO.findIndex((p) => p.key === orden.estado);
+  }, [folio]);
 
   return (
-    <div className="min-h-screen w-full bg-slate-50">
-      {/* Cabecera */}
-      <header className="bg-slate-900 text-white">
-        {/* Barra superior de extremo a extremo */}
-        <div className="w-full px-4 sm:px-8 lg:px-12 py-4 border-b border-white/10 flex items-center justify-between gap-4">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Volver al inicio</span>
-          </Link>
-
-          {user && (
+    <div className="min-h-screen bg-slate-50">
+      {/* Encabezado */}
+      <div className="bg-slate-900 text-white px-6 py-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between text-xs text-slate-300 mb-6">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 hover:text-white transition"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Volver al inicio
+            </Link>
             <Link
               to="/dashboard/ordenes"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-white/10 hover:bg-white/20 text-white border border-white/15 transition"
+              className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
             >
-              <span>Volver a órdenes del taller</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              Volver a órdenes del taller →
             </Link>
-          )}
-        </div>
+          </div>
 
-        {/* Título de la orden alineado con las tarjetas */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-8 py-7">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-300 uppercase tracking-wider">
-            <ShieldCheck className="h-4 w-4" />
-            {orden.establecimiento_nombre || 'TechFix Celaya'}
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-bold !text-white mt-1">
-            Orden #{orden.folio}
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase text-brand-300 mb-1">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Portal de seguimiento RepairHub
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight !text-white">
+            Orden #{folio}
           </h1>
-          <p className="text-sm text-slate-300 mt-0.5">
-            {orden.equipo_descripcion} · Cliente: {orden.cliente_nombre}
-          </p>
         </div>
-      </header>
+      </div>
 
       {/* Contenido */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-8 space-y-6">
-        {/* Línea de progreso */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-900 mb-4">Progreso de tu reparación</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {PASOS_FLUJO.map((paso, idx) => {
-              const completado =
-                orden.estado === 'entregado' || idx <= indicePasoActual;
-              return (
-                <div
-                  key={paso.key}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
-                    completado
-                      ? 'bg-brand-50 border-brand-200 text-brand-700'
-                      : 'bg-slate-50 border-slate-200 text-slate-400'
-                  }`}
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        {cargando ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-sm text-slate-500">
+            Consultando estado de la orden #{folio}...
+          </div>
+        ) : !orden ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
+            <FileText className="h-10 w-10 text-slate-300 mx-auto" />
+            <h2 className="text-base font-bold text-slate-900">
+              No encontramos la orden #{folio}
+            </h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              {requiereLogin
+                ? 'Inicia sesión con el correo del cliente registrado en la orden para consultar su seguimiento y evidencias.'
+                : 'Verifica que el folio sea correcto o que tu sesión corresponda al cliente o taller de esta orden.'}
+            </p>
+            {requiereLogin && (
+              <div className="pt-2">
+                <Link
+                  to="/login"
+                  className="inline-flex items-center px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition"
                 >
-                  {completado ? (
-                    <CheckCircle2 className="h-4 w-4 text-brand-600 shrink-0" />
-                  ) : (
-                    <Clock className="h-4 w-4 shrink-0" />
-                  )}
-                  <span>{paso.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Diagnóstico técnico */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 text-slate-900 font-bold border-b border-slate-100 pb-3">
-            <Wrench className="h-5 w-5 text-brand-600" />
-            <h2>Reporte técnico</h2>
-          </div>
-
-          <div className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase">Falla reportada</p>
-              <p className="text-slate-800 mt-0.5">{orden.falla_reportada}</p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase">
-                Diagnóstico del especialista
-              </p>
-              <p className="text-slate-800 mt-0.5">
-                {orden.diagnostico_tecnico ||
-                  'Nuestro técnico está revisando tu equipo. Pronto verás aquí el diagnóstico detallado.'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Cotización y botones de aprobación */}
-        {orden.cotizacion_monto && (
-          <div className="bg-white p-6 rounded-2xl border-2 border-brand-200 shadow-sm space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2 text-slate-900 font-bold">
-                <FileText className="h-5 w-5 text-brand-600" />
-                <h2>Presupuesto / Cotización</h2>
+                  Iniciar sesión como cliente
+                </Link>
               </div>
-
-              <span className="text-xl font-extrabold text-brand-600 inline-flex items-center">
-                <DollarSign className="h-5 w-5" />
-                {orden.cotizacion_monto} MXN
-              </span>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Estado y equipo */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 capitalize">
+                  <Wrench className="h-3.5 w-3.5" />
+                  {orden.estado?.replace(/_/g, ' ')}
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-2">
+                  {orden.equipo?.marca} {orden.equipo?.modelo}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cliente: {orden.cliente?.nombre} · Falla reportada:{' '}
+                  {orden.problema_reportado}
+                </p>
+              </div>
+              {orden.fecha_estimada_entrega && (
+                <div className="text-right text-xs text-slate-500">
+                  <span className="block font-semibold text-slate-700">
+                    Entrega estimada
+                  </span>
+                  {orden.fecha_estimada_entrega}
+                </div>
+              )}
             </div>
 
-            {orden.cotizacion_detalle && (
-              <p className="text-sm text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                {orden.cotizacion_detalle}
-              </p>
+            {/* Diagnóstico técnico */}
+            {orden.diagnosticos?.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  Diagnóstico técnico
+                </h3>
+                {orden.diagnosticos.map((d) => (
+                  <div
+                    key={d.id}
+                    className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1"
+                  >
+                    <p className="font-medium text-slate-800">{d.descripcion}</p>
+                    {d.reparacion_sugerida && (
+                      <p className="text-slate-500">
+                        Sugerencia: {d.reparacion_sugerida}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
 
-            {orden.cotizacion_estado === 'aprobada' ? (
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2.5 font-medium">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                <span>
-                  Has aprobado esta cotización. El taller ya está trabajando en tu reparación.
-                </span>
+            {/* Evidencias fotográficas */}
+            {orden.evidencias?.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4 text-brand-600" />
+                  Evidencias fotográficas
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {orden.evidencias.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
+                    >
+                      {ev.url && (
+                        <img
+                          src={ev.url}
+                          alt={ev.descripcion || 'Evidencia de reparación'}
+                          className="w-full h-48 object-cover"
+                        />
+                      )}
+                      <div className="p-3 text-xs text-slate-600">
+                        {ev.descripcion || 'Evidencia adjunta por el taller'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ) : orden.cotizacion_estado === 'rechazada' ? (
-              <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center gap-2.5 font-medium">
-                <XCircle className="h-5 w-5 text-red-600 shrink-0" />
-                <span>
-                  Cotización rechazada. El taller se pondrá en contacto contigo.
-                </span>
-              </div>
-            ) : (
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <p className="text-xs text-slate-500">
-                  Autoriza el presupuesto para que el técnico proceda con la reparación:
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => responderCotizacion('rechazada')}
-                    className="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
-                  >
-                    Rechazar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => responderCotizacion('aprobada')}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
-                  >
-                    Aprobar cotización
-                  </button>
+            )}
+
+            {/* Historial de avances */}
+            {orden.historial?.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-slate-600" />
+                  Historial de movimientos
+                </h3>
+                <div className="divide-y divide-slate-100">
+                  {orden.historial.map((h) => (
+                    <div key={h.id} className="py-3 text-xs">
+                      <p className="font-medium text-slate-800">{h.comentario}</p>
+                      <span className="text-slate-400 capitalize">
+                        Estado: {h.estado_nuevo?.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

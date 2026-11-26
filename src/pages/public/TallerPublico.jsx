@@ -6,39 +6,40 @@ import {
   Mail,
   Clock,
   Calendar,
-  CheckCircle2,
   Wrench,
-  Smartphone,
+  CheckCircle2,
+  ArrowLeft,
   ArrowRight,
   AlertCircle,
 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
-const TALLER_DEMO = {
-  id: 1,
-  nombre: 'TechFix Celaya',
-  slug: 'techfix-celaya',
-  descripcion:
-    'Servicio técnico especializado en reparación de laptops, smartphones, tabletas y mantenimiento preventivo con garantía por escrito.',
-  correo: 'contacto@techfix.mx',
-  telefono: '461 234 5678',
-  direccion: 'Av. Tecnológico #450, Col. Centro, Celaya, Gto.',
-  horario_atencion: {
-    lunes: { abierto: true, inicio: '09:00', fin: '18:00' },
-    martes: { abierto: true, inicio: '09:00', fin: '18:00' },
-    miercoles: { abierto: true, inicio: '09:00', fin: '18:00' },
-    jueves: { abierto: true, inicio: '09:00', fin: '18:00' },
-    viernes: { abierto: true, inicio: '09:00', fin: '18:00' },
-    sabado: { abierto: true, inicio: '09:00', fin: '14:00' },
-    domingo: { abierto: false, inicio: '09:00', fin: '14:00' },
+const TALLERES_DEMO_POR_SLUG = {
+  'techfix-celaya': {
+    nombre: 'TechFix Celaya',
+    slug: 'techfix-celaya',
+    descripcion:
+      'Servicio técnico especializado en reparación de laptops, smartphones, tabletas y mantenimiento preventivo con garantía por escrito.',
+    telefono: '461 234 5678',
+    correo: 'contacto@techfix.mx',
+    direccion: 'Av. Tecnológico #450, Col. Centro, Celaya, Gto.',
+    horario_atencion: {
+      lunes: { abierto: true, inicio: '09:00', fin: '18:00' },
+      martes: { abierto: true, inicio: '09:00', fin: '18:00' },
+      miercoles: { abierto: true, inicio: '09:00', fin: '18:00' },
+      jueves: { abierto: true, inicio: '09:00', fin: '18:00' },
+      viernes: { abierto: true, inicio: '09:00', fin: '18:00' },
+      sabado: { abierto: true, inicio: '09:00', fin: '14:00' },
+      domingo: { abierto: false, inicio: '09:00', fin: '14:00' },
+    },
+    servicios: [
+      { id: 1, nombre: 'Diagnóstico general y revisión', precio_base: 150, duracion_estimada_minutos: 30 },
+      { id: 2, nombre: 'Mantenimiento preventivo y pasta térmica', precio_base: 450, duracion_estimada_minutos: 90 },
+      { id: 3, nombre: 'Cambio de pantalla / display', precio_base: null, duracion_estimada_minutos: null },
+      { id: 4, nombre: 'Reemplazo de batería', precio_base: 950, duracion_estimada_minutos: 60 },
+    ],
   },
-  servicios: [
-    { id: 1, nombre: 'Diagnóstico general y revisión', precio_estimado: 150, duracion: '30 min' },
-    { id: 2, nombre: 'Mantenimiento preventivo y cambio de pasta térmica', precio_estimado: 450, duracion: '1.5 hrs' },
-    { id: 3, nombre: 'Cambio de pantalla / display', precio_estimado: 1800, duracion: '2 hrs' },
-    { id: 4, nombre: 'Reemplazo de batería', precio_estimado: 950, duracion: '1 hr' },
-  ],
 };
 
 const DIAS_LABEL = {
@@ -51,6 +52,13 @@ const DIAS_LABEL = {
   domingo: 'Domingo',
 };
 
+const formatearDuracion = (min) => {
+  if (!min) return 'A reserva de modelo';
+  if (min < 60) return `${min} min`;
+  const hrs = (min / 60).toFixed(min % 60 === 0 ? 0 : 1);
+  return `${hrs} ${Number(hrs) === 1 ? 'hr' : 'hrs'}`;
+};
+
 export default function TallerPublico({ onNuevaCitaDemo }) {
   const { slug } = useParams();
   const { user } = useAuth();
@@ -61,64 +69,81 @@ export default function TallerPublico({ onNuevaCitaDemo }) {
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    cliente_nombre: '',
-    cliente_telefono: '',
-    cliente_correo: '',
+    nombre: '',
+    telefono: '',
+    correo: '',
     servicio_id: '',
-    equipo_descripcion: '',
-    fecha_hora: '',
-    notas: '',
+    fecha_programada: '',
+    descripcion_problema: '',
   });
 
   useEffect(() => {
     setLoading(true);
     api
-      .get(`/api/public/establecimientos/${slug}`)
+      .get(`/api/publico/${slug}`)
       .then(({ data }) => {
         setTaller(data.data ?? data);
       })
       .catch(() => {
-        setTaller({
-          ...TALLER_DEMO,
-          slug: slug || TALLER_DEMO.slug,
-          nombre: slug
-            ? slug
-                .split('-')
-                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(' ')
-            : TALLER_DEMO.nombre,
-        });
+        setTaller(
+          TALLERES_DEMO_POR_SLUG[slug] || {
+            ...TALLERES_DEMO_POR_SLUG['techfix-celaya'],
+            slug,
+          }
+        );
       })
       .finally(() => setLoading(false));
   }, [slug]);
 
+  const handleChange = (e) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!form.telefono.trim() && !form.correo.trim()) {
+      setError('Ingresa al menos un teléfono o correo electrónico de contacto.');
+      return;
+    }
+
     setEnviando(true);
-
-    const servicioSeleccionado = (taller?.servicios || TALLER_DEMO.servicios).find(
-      (s) => String(s.id) === String(form.servicio_id)
-    );
-
     const payload = {
-      ...form,
-      establecimiento_id: taller?.id || 1,
-      servicio_nombre: servicioSeleccionado?.nombre || 'Revisión general',
+      nombre: form.nombre.trim(),
+      telefono: form.telefono.trim() || null,
+      correo: form.correo.trim() || null,
+      servicio_id: form.servicio_id ? Number(form.servicio_id) : null,
+      fecha_programada: form.fecha_programada,
+      descripcion_problema: form.descripcion_problema.trim(),
     };
 
     try {
-      const { data } = await api.post(`/api/public/establecimientos/${slug}/citas`, payload);
-      setCitaEnviada(data.data ?? data);
-    } catch {
-      const nuevaCita = {
-        id: Date.now(),
-        ...payload,
-        estado: 'pendiente',
-        created_at: new Date().toISOString(),
-      };
-      if (onNuevaCitaDemo) onNuevaCitaDemo(nuevaCita);
-      setCitaEnviada(nuevaCita);
+      const { data } = await api.post(`/api/publico/${slug}/citas`, payload);
+      setCitaEnviada(data);
+    } catch (err) {
+      if (err.response?.status === 422 || err.response?.status === 429) {
+        const errores = err.response.data?.errors;
+        const primerError = errores ? Object.values(errores)[0]?.[0] : null;
+        setError(primerError || err.response.data?.message || 'Revisa los datos de tu cita.');
+      } else {
+        const servicioObj = taller?.servicios?.find((s) => String(s.id) === String(form.servicio_id));
+        const nueva = {
+          id: Date.now(),
+          cliente_nombre: form.nombre,
+          cliente_telefono: form.telefono,
+          cliente_correo: form.correo,
+          servicio_nombre: servicioObj?.nombre || 'Diagnóstico general',
+          fecha_hora: form.fecha_programada,
+          notas: form.descripcion_problema,
+          estado: 'pendiente',
+        };
+        if (onNuevaCitaDemo) onNuevaCitaDemo(nueva);
+        setCitaEnviada({
+          message: 'Solicitud recibida (modo respaldo local).',
+          cita: { id: nueva.id, fecha_programada: form.fecha_programada, estado: 'pendiente' },
+        });
+      }
     } finally {
       setEnviando(false);
     }
@@ -132,14 +157,10 @@ export default function TallerPublico({ onNuevaCitaDemo }) {
     );
   }
 
-  const servicios = taller?.servicios?.length ? taller.servicios : TALLER_DEMO.servicios;
-  const horarios = taller?.horario_atencion || TALLER_DEMO.horario_atencion;
-
   return (
     <div className="min-h-screen w-full bg-slate-50">
       {/* Cabecera pública */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900 text-white">
-        {/* Barra superior de extremo a extremo */}
         <div className="w-full px-4 sm:px-8 lg:px-12 py-4 border-b border-white/10 flex items-center justify-between gap-4">
           <Link
             to="/"
@@ -160,7 +181,6 @@ export default function TallerPublico({ onNuevaCitaDemo }) {
           )}
         </div>
 
-        {/* Información del establecimiento alineada con las columnas */}
         <div className="max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12">
           <div className="space-y-3 max-w-3xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
@@ -199,265 +219,242 @@ export default function TallerPublico({ onNuevaCitaDemo }) {
       </header>
 
       {/* Contenido Principal */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Columna Izquierda: Servicios y Horarios */}
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 text-slate-900 font-semibold border-b border-slate-100 pb-3 mb-4">
+      <main className="max-w-6xl mx-auto px-4 sm:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Columna Izquierda: Catálogo de servicios y horarios */}
+        <div className="lg:col-span-7 space-y-6">
+          <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <Wrench className="h-5 w-5 text-brand-600" />
-              <h2>Servicios disponibles</h2>
+              <h2 className="text-lg font-bold text-slate-900">Servicios y tarifas</h2>
             </div>
 
-            <div className="space-y-3">
-              {servicios.map((srv) => (
-                <div
-                  key={srv.id}
-                  onClick={() => setForm((prev) => ({ ...prev, servicio_id: String(srv.id) }))}
-                  className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                    String(form.servicio_id) === String(srv.id)
-                      ? 'border-brand-600 bg-brand-50/60'
-                      : 'border-slate-200 hover:border-brand-300 bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{srv.nombre}</p>
-                    <span className="text-xs font-bold text-brand-600 shrink-0">
-                      ${srv.precio_estimado} MXN
-                    </span>
+            {!taller?.servicios || taller.servicios.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Este taller realiza diagnósticos personalizados al recibir tu equipo.
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {taller.servicios.map((srv) => (
+                  <div key={srv.id} className="py-3.5 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{srv.nombre}</p>
+                      {srv.descripcion && (
+                        <p className="text-xs text-slate-500 mt-0.5">{srv.descripcion}</p>
+                      )}
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Tiempo estimado: {formatearDuracion(srv.duracion_estimada_minutos)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {srv.precio_base !== null && srv.precio_base !== undefined ? (
+                        <span className="text-sm font-bold text-brand-600">
+                          Desde ${Number(srv.precio_base).toFixed(0)} MXN
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                          Previa revisión
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Tiempo estimado: {srv.duracion}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+                ))}
+              </div>
+            )}
+          </section>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 text-slate-900 font-semibold border-b border-slate-100 pb-3 mb-4">
-              <Clock className="h-5 w-5 text-brand-600" />
-              <h2>Horarios de atención</h2>
-            </div>
+          {taller?.horario_atencion && (
+            <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Clock className="h-5 w-5 text-brand-600" />
+                <h2 className="text-lg font-bold text-slate-900">Horarios de atención</h2>
+              </div>
 
-            <div className="space-y-2.5 text-sm">
-              {Object.entries(DIAS_LABEL).map(([key, label]) => {
-                const info = horarios[key];
-                return (
-                  <div key={key} className="flex items-center justify-between">
-                    <span className="text-slate-600 font-medium">{label}</span>
-                    {info?.abierto ? (
-                      <span className="text-slate-900 font-semibold text-xs bg-slate-100 px-2.5 py-1 rounded-lg">
-                        {info.inicio} - {info.fin}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400 italic">Cerrado</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
+                {Object.entries(DIAS_LABEL).map(([key, label]) => {
+                  const dia = taller.horario_atencion?.[key];
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-100"
+                    >
+                      <span className="font-medium text-slate-700">{label}</span>
+                      {dia?.abierto ? (
+                        <span className="text-slate-600 font-medium">
+                          {dia.inicio || dia.apertura} - {dia.fin || dia.cierre}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">Cerrado</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </div>
 
-        {/* Columna Derecha: Formulario de Solicitud de Cita */}
-        <div className="lg:col-span-2">
-          <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
+        {/* Columna Derecha: Formulario de solicitud de cita */}
+        <div className="lg:col-span-5">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm sticky top-6">
             {citaEnviada ? (
-              <div className="py-10 text-center max-w-md mx-auto space-y-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="h-8 w-8" />
+              <div className="py-6 text-center space-y-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="h-7 w-7" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  ¡Solicitud de cita enviada!
-                </h2>
+                <h3 className="text-xl font-bold text-slate-900">¡Solicitud enviada!</h3>
                 <p className="text-sm text-slate-600">
-                  Hemos registrado tu solicitud para{' '}
-                  <strong className="text-slate-900">{citaEnviada.equipo_descripcion}</strong>. El
-                  taller confirmará tu horario a la brevedad.
+                  {citaEnviada.message || 'El taller revisará tu solicitud y confirmará tu horario.'}
                 </p>
-
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left text-xs space-y-2 text-slate-700">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left text-xs space-y-1.5 text-slate-600">
                   <p>
-                    <strong>Cliente:</strong> {citaEnviada.cliente_nombre}
+                    <strong className="text-slate-800">Cliente:</strong> {form.nombre}
                   </p>
                   <p>
-                    <strong>Servicio:</strong> {citaEnviada.servicio_nombre}
+                    <strong className="text-slate-800">Fecha solicitada:</strong>{' '}
+                    {form.fecha_programada.replace('T', ' ')}
                   </p>
                   <p>
-                    <strong>Fecha y hora deseada:</strong>{' '}
-                    {new Date(citaEnviada.fecha_hora).toLocaleString('es-MX')}
+                    <strong className="text-slate-800">Estado:</strong> Pendiente de confirmación
                   </p>
                 </div>
-
-                <div className="pt-4 flex flex-wrap justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCitaEnviada(null);
-                      setForm({
-                        cliente_nombre: '',
-                        cliente_telefono: '',
-                        cliente_correo: '',
-                        servicio_id: '',
-                        equipo_descripcion: '',
-                        fecha_hora: '',
-                        notas: '',
-                      });
-                    }}
-                    className="px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-                  >
-                    Agendar otra cita
-                  </button>
-                  {user && (
-                    <Link
-                      to="/dashboard/citas"
-                      className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold"
-                    >
-                      Ver cita en el panel
-                    </Link>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCitaEnviada(null);
+                    setForm({
+                      nombre: '',
+                      telefono: '',
+                      correo: '',
+                      servicio_id: '',
+                      fecha_programada: '',
+                      descripcion_problema: '',
+                    });
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Agendar otra cita
+                </button>
               </div>
             ) : (
-              <>
-                <div className="flex items-center gap-2.5 border-b border-slate-100 pb-4 mb-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <Calendar className="h-5 w-5 text-brand-600" />
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">Agenda tu cita</h2>
-                    <p className="text-xs text-slate-500">
-                      Completa tus datos y selecciona el servicio o falla de tu equipo
-                    </p>
+                    <h2 className="text-lg font-bold text-slate-900">Agendar una cita</h2>
+                    <p className="text-xs text-slate-500">Sin necesidad de crear cuenta</p>
                   </div>
                 </div>
 
                 {error && (
-                  <div className="mb-5 flex items-center gap-2 p-3.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-                    <AlertCircle className="h-5 w-5 shrink-0" />
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Tu nombre completo *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={form.cliente_nombre}
-                        onChange={(e) => setForm({ ...form, cliente_nombre: e.target.value })}
-                        placeholder="Ej. Ana Sofía Ramírez"
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tu nombre completo *
+                  </label>
+                  <input
+                    type="text"
+                    name="nombre"
+                    required
+                    value={form.nombre}
+                    onChange={handleChange}
+                    placeholder="Ej. María Fernanda López"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Teléfono / WhatsApp *
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={form.cliente_telefono}
-                        onChange={(e) => setForm({ ...form, cliente_telefono: e.target.value })}
-                        placeholder="461 123 4567"
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Correo electrónico
-                      </label>
-                      <input
-                        type="email"
-                        value={form.cliente_correo}
-                        onChange={(e) => setForm({ ...form, cliente_correo: e.target.value })}
-                        placeholder="cliente@correo.com"
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Fecha y hora preferida *
-                      </label>
-                      <input
-                        type="datetime-local"
-                        required
-                        value={form.fecha_hora}
-                        onChange={(e) => setForm({ ...form, fecha_hora: e.target.value })}
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Servicio requerido *
-                      </label>
-                      <select
-                        required
-                        value={form.servicio_id}
-                        onChange={(e) => setForm({ ...form, servicio_id: e.target.value })}
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                      >
-                        <option value="">Selecciona un servicio...</option>
-                        {servicios.map((srv) => (
-                          <option key={srv.id} value={srv.id}>
-                            {srv.nombre} (${srv.precio_estimado})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Equipo (Marca y modelo) *
-                      </label>
-                      <div className="relative">
-                        <Smartphone className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
-                        <input
-                          type="text"
-                          required
-                          value={form.equipo_descripcion}
-                          onChange={(e) =>
-                            setForm({ ...form, equipo_descripcion: e.target.value })
-                          }
-                          placeholder="Ej. Laptop HP Pavilion 15"
-                          className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Descripción de la falla o notas adicionales
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Teléfono / WhatsApp
                     </label>
-                    <textarea
-                      rows={3}
-                      value={form.notas}
-                      onChange={(e) => setForm({ ...form, notas: e.target.value })}
-                      placeholder="Cuéntanos brevemente qué problema presenta tu equipo..."
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
+                    <input
+                      type="tel"
+                      name="telefono"
+                      value={form.telefono}
+                      onChange={handleChange}
+                      placeholder="461 123 4567"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Correo electrónico
+                    </label>
+                    <input
+                      type="email"
+                      name="correo"
+                      value={form.correo}
+                      onChange={handleChange}
+                      placeholder="correo@ejemplo.com"
+                      className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+                    />
+                  </div>
+                </div>
 
-                  <button
-                    type="submit"
-                    disabled={enviando}
-                    className="w-full py-3 px-4 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow-sm transition cursor-pointer disabled:opacity-60"
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Servicio requerido
+                  </label>
+                  <select
+                    name="servicio_id"
+                    value={form.servicio_id}
+                    onChange={handleChange}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
                   >
-                    {enviando ? 'Enviando solicitud...' : 'Solicitar cita ahora'}
-                  </button>
-                </form>
-              </>
+                    <option value="">Diagnóstico / No estoy seguro</option>
+                    {taller?.servicios?.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}{' '}
+                        {s.precio_base !== null && s.precio_base !== undefined
+                          ? `($${Number(s.precio_base).toFixed(0)})`
+                          : '(Previa revisión)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Fecha y hora preferida *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    name="fecha_programada"
+                    required
+                    value={form.fecha_programada}
+                    onChange={handleChange}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Equipo / Vehículo y descripción de la falla *
+                  </label>
+                  <textarea
+                    name="descripcion_problema"
+                    required
+                    rows={3}
+                    value={form.descripcion_problema}
+                    onChange={handleChange}
+                    placeholder="Ej. Laptop HP Pavilion 15 - No enciende al conectar el cargador..."
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={enviando}
+                  className="w-full py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold shadow-sm transition cursor-pointer disabled:opacity-60"
+                >
+                  {enviando ? 'Enviando solicitud...' : 'Solicitar cita'}
+                </button>
+              </form>
             )}
           </div>
         </div>

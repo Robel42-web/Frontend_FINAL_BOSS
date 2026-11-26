@@ -1,601 +1,494 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import {
   Users,
   UserPlus,
   Search,
   Phone,
   Mail,
-  Smartphone,
+  Laptop,
   Plus,
-  X,
-  Wrench,
-  Hash,
-  ClipboardPlus,
+  AlertCircle,
+  CheckCircle2,
+  Trash2,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 
-const CLIENTES_DEMO = [
-  {
-    id: 1,
-    nombre: 'Laura Gómez',
-    telefono: '461 555 0192',
-    correo: 'laura.gomez@gmail.com',
-    notas: 'Cliente frecuente, prefiere contacto por WhatsApp.',
-    equipos: [
-      {
-        id: 11,
-        tipo: 'Laptop',
-        marca_modelo: 'Lenovo IdeaPad Gaming 3',
-        serie_placa: 'SN-LNV883920',
-        notas: 'Cargador original incluido',
-      },
-    ],
-  },
-  {
-    id: 2,
-    nombre: 'Marco Antonio Ruiz',
-    telefono: '461 889 3410',
-    correo: 'marco.ruiz@outlook.com',
-    notas: '',
-    equipos: [
-      {
-        id: 21,
-        tipo: 'Smartphone',
-        marca_modelo: 'iPhone 13 Pro',
-        serie_placa: 'IMEI-359820114',
-        notas: 'Color azul sierra, 256GB',
-      },
-      {
-        id: 22,
-        tipo: 'Consola',
-        marca_modelo: 'PlayStation 5',
-        serie_placa: 'SN-PS500912',
-        notas: '',
-      },
-    ],
-  },
-];
-
-export default function Clientes({ negocioActivo, clientes = [], onActualizarClientes }) {
-  const navigate = useNavigate();
-  const [listaClientes, setListaClientes] = useState(
-    clientes.length > 0 ? clientes : CLIENTES_DEMO
-  );
+export default function Clientes({ negocioActivo: negocioProp } = {}) {
+  const outlet = useOutletContext() || {};
+  const negocioActivo = negocioProp ?? outlet.negocioActivo ?? null;
+  const [clientes, setClientes] = useState([]);
+  const [equipos, setEquipos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
   const [busqueda, setBusqueda] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [mensaje, setMensaje] = useState({ tipo: '', texto: '' });
 
-  // Modal Nuevo Cliente
-  const [modalClienteOpen, setModalClienteOpen] = useState(false);
+  // Modal / Formulario nuevo cliente
+  const [mostrarFormCliente, setMostrarFormCliente] = useState(false);
   const [nuevoCliente, setNuevoCliente] = useState({
     nombre: '',
     telefono: '',
     correo: '',
-    notas: '',
-    equipo_tipo: 'Equipo / Dispositivo',
-    equipo_marca_modelo: '',
-    equipo_serie_placa: '',
+    observaciones: '',
   });
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
 
-  // Modal Agregar Equipo a Cliente existente
+  // Formulario nuevo equipo para un cliente
   const [clienteParaEquipo, setClienteParaEquipo] = useState(null);
   const [nuevoEquipo, setNuevoEquipo] = useState({
-    tipo: 'Equipo / Dispositivo',
-    marca_modelo: '',
-    serie_placa: '',
-    notas: '',
+    categoria_id: '',
+    nombre: '',
+    marca: '',
+    modelo: '',
+    numero_serie: '',
+    observaciones: '',
+    caracteristicas: {},
   });
+  const [guardandoEquipo, setGuardandoEquipo] = useState(false);
+
+  const cargarDatos = async () => {
+    if (!negocioActivo?.id) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [resClientes, resEquipos, resCats] = await Promise.all([
+        api.get(`/api/establecimientos/${negocioActivo.id}/clientes`),
+        api.get(`/api/establecimientos/${negocioActivo.id}/equipos`),
+        api.get('/api/categorias-equipos'),
+      ]);
+      setClientes(Array.isArray(resClientes.data) ? resClientes.data : []);
+      setEquipos(Array.isArray(resEquipos.data) ? resEquipos.data : []);
+      setCategorias(Array.isArray(resCats.data) ? resCats.data : []);
+    } catch {
+      // Mantiene estado actual si falla
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (clientes.length > 0) setListaClientes(clientes);
-  }, [clientes]);
-
-  useEffect(() => {
-    if (!negocioActivo?.id) return;
-    api
-      .get(`/api/establecimientos/${negocioActivo.id}/clientes`)
-      .then(({ data }) => {
-        const items = data.data ?? data;
-        if (Array.isArray(items) && items.length > 0) {
-          setListaClientes(items);
-        }
-      })
-      .catch(() => {
-        // Conserva datos locales en modo vista previa
-      });
+    cargarDatos();
   }, [negocioActivo?.id]);
 
   const handleCrearCliente = async (e) => {
     e.preventDefault();
-    const equiposIniciales = nuevoCliente.equipo_marca_modelo.trim()
-      ? [
-          {
-            id: Date.now() + 1,
-            tipo: nuevoCliente.equipo_tipo,
-            marca_modelo: nuevoCliente.equipo_marca_modelo.trim(),
-            serie_placa: nuevoCliente.equipo_serie_placa.trim() || 'Sin serie',
-            notas: '',
-          },
-        ]
-      : [];
+    if (!negocioActivo?.id) return;
+    setMensaje({ tipo: '', texto: '' });
 
-    const payload = {
-      id: Date.now(),
-      establecimiento_id: negocioActivo?.id || 1,
-      nombre: nuevoCliente.nombre.trim(),
-      telefono: nuevoCliente.telefono.trim(),
-      correo: nuevoCliente.correo.trim(),
-      notas: nuevoCliente.notas.trim(),
-      equipos: equiposIniciales,
-    };
-
-    try {
-      const { data } = await api.post(
-        `/api/establecimientos/${negocioActivo?.id || 1}/clientes`,
-        payload
-      );
-      const creado = data.data ?? data;
-      const actualizada = [creado, ...listaClientes];
-      setListaClientes(actualizada);
-      if (onActualizarClientes) onActualizarClientes(actualizada);
-    } catch {
-      const actualizada = [payload, ...listaClientes];
-      setListaClientes(actualizada);
-      if (onActualizarClientes) onActualizarClientes(actualizada);
+    if (!nuevoCliente.telefono.trim() && !nuevoCliente.correo.trim()) {
+      setMensaje({ tipo: 'error', texto: 'Ingresa al menos un teléfono o correo para el cliente.' });
+      return;
     }
 
-    setNuevoCliente({
-      nombre: '',
-      telefono: '',
-      correo: '',
-      notas: '',
-      equipo_tipo: 'Equipo / Dispositivo',
-      equipo_marca_modelo: '',
-      equipo_serie_placa: '',
-    });
-    setModalClienteOpen(false);
+    setGuardandoCliente(true);
+    try {
+      const { data } = await api.post(`/api/establecimientos/${negocioActivo.id}/clientes`, {
+        nombre: nuevoCliente.nombre.trim(),
+        telefono: nuevoCliente.telefono.trim() || null,
+        correo: nuevoCliente.correo.trim() || null,
+        observaciones: nuevoCliente.observaciones.trim() || null,
+      });
+      setClientes((prev) => [data, ...prev]);
+      setNuevoCliente({ nombre: '', telefono: '', correo: '', observaciones: '' });
+      setMostrarFormCliente(false);
+      setMensaje({ tipo: 'ok', texto: 'Cliente registrado correctamente.' });
+    } catch (err) {
+      setMensaje({
+        tipo: 'error',
+        texto: err.response?.data?.message || 'No se pudo registrar el cliente.',
+      });
+    } finally {
+      setGuardandoCliente(false);
+    }
   };
 
-  const handleAgregarEquipo = async (e) => {
+  const handleEliminarCliente = async (clienteId) => {
+    if (!negocioActivo?.id) return;
+    try {
+      await api.delete(`/api/establecimientos/${negocioActivo.id}/clientes/${clienteId}`);
+      setClientes((prev) => prev.filter((c) => c.id !== clienteId));
+    } catch (err) {
+      setMensaje({
+        tipo: 'error',
+        texto: err.response?.data?.message || 'No se pudo eliminar el cliente.',
+      });
+    }
+  };
+
+  const handleCrearEquipo = async (e) => {
     e.preventDefault();
-    if (!clienteParaEquipo) return;
-
-    const equipoCreado = {
-      id: Date.now(),
-      tipo: nuevoEquipo.tipo,
-      marca_modelo: nuevoEquipo.marca_modelo.trim(),
-      serie_placa: nuevoEquipo.serie_placa.trim() || 'Sin serie',
-      notas: nuevoEquipo.notas.trim(),
-    };
+    if (!negocioActivo?.id || !clienteParaEquipo) return;
+    setGuardandoEquipo(true);
+    setMensaje({ tipo: '', texto: '' });
 
     try {
-      await api.post(`/api/clientes/${clienteParaEquipo.id}/equipos`, equipoCreado);
-    } catch {
-      // Actualización local en modo vista previa
+      const { data } = await api.post(`/api/establecimientos/${negocioActivo.id}/equipos`, {
+        cliente_id: clienteParaEquipo.id,
+        categoria_id: Number(nuevoEquipo.categoria_id),
+        nombre: nuevoEquipo.nombre.trim() || null,
+        marca: nuevoEquipo.marca.trim() || null,
+        modelo: nuevoEquipo.modelo.trim() || null,
+        numero_serie: nuevoEquipo.numero_serie.trim() || null,
+        observaciones: nuevoEquipo.observaciones.trim() || null,
+        caracteristicas: nuevoEquipo.caracteristicas,
+      });
+      setEquipos((prev) => [data, ...prev]);
+      setClienteParaEquipo(null);
+      setNuevoEquipo({
+        categoria_id: '',
+        nombre: '',
+        marca: '',
+        modelo: '',
+        numero_serie: '',
+        observaciones: '',
+        caracteristicas: {},
+      });
+      setMensaje({ tipo: 'ok', texto: 'Equipo o unidad vinculado al cliente.' });
+    } catch (err) {
+      setMensaje({
+        tipo: 'error',
+        texto: err.response?.data?.message || 'No se pudo registrar el equipo.',
+      });
+    } finally {
+      setGuardandoEquipo(false);
     }
-
-    const actualizada = listaClientes.map((c) =>
-      c.id === clienteParaEquipo.id
-        ? { ...c, equipos: [...(c.equipos || []), equipoCreado] }
-        : c
-    );
-    setListaClientes(actualizada);
-    if (onActualizarClientes) onActualizarClientes(actualizada);
-
-    setNuevoEquipo({
-      tipo: 'Equipo / Dispositivo',
-      marca_modelo: '',
-      serie_placa: '',
-      notas: '',
-    });
-    setClienteParaEquipo(null);
   };
 
-  const clientesFiltrados = listaClientes.filter((c) => {
+  const categoriaSeleccionada = categorias.find(
+    (c) => String(c.id) === String(nuevoEquipo.categoria_id)
+  );
+
+  const clientesFiltrados = clientes.filter((c) => {
     const q = busqueda.toLowerCase().trim();
     if (!q) return true;
     return (
       c.nombre?.toLowerCase().includes(q) ||
-      c.telefono?.toLowerCase().includes(q) ||
       c.correo?.toLowerCase().includes(q) ||
-      c.equipos?.some(
-        (eq) =>
-          eq.marca_modelo?.toLowerCase().includes(q) ||
-          eq.serie_placa?.toLowerCase().includes(q)
-      )
+      c.telefono?.toLowerCase().includes(q)
     );
   });
 
   return (
-    <div className="space-y-6">
-      {/* Encabezado */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6 max-w-6xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Clientes y equipos</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Directorio de clientes y registro técnico de sus equipos, vehículos o aparatos.
+          <p className="text-sm text-slate-500">
+            Directorio de clientes del taller y sus dispositivos, vehículos o electrodomésticos.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => setModalClienteOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow-sm transition cursor-pointer self-start"
+          onClick={() => setMostrarFormCliente((v) => !v)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold shadow-sm transition cursor-pointer"
         >
           <UserPlus className="h-4 w-4" />
-          <span>Registrar cliente</span>
+          <span>Nuevo cliente</span>
         </button>
       </div>
 
-      {/* Buscador */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative w-full sm:w-96">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por cliente, teléfono, modelo o serie/placa..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-          />
+      {mensaje.texto && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+            mensaje.tipo === 'ok'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {mensaje.tipo === 'ok' ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 shrink-0" />
+          )}
+          <span>{mensaje.texto}</span>
         </div>
+      )}
 
-        <span className="text-xs font-medium text-slate-500">
-          {clientesFiltrados.length}{' '}
-          {clientesFiltrados.length === 1 ? 'cliente registrado' : 'clientes registrados'}
-        </span>
+      {/* Formulario rápido para nuevo cliente */}
+      {mostrarFormCliente && (
+        <form
+          onSubmit={handleCrearCliente}
+          className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4"
+        >
+          <h2 className="text-base font-bold text-slate-900">Registrar nuevo cliente</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nombre completo *</label>
+              <input
+                type="text"
+                required
+                value={nuevoCliente.nombre}
+                onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })}
+                placeholder="Ej. Diego Hernández"
+                className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Teléfono</label>
+              <input
+                type="tel"
+                value={nuevoCliente.telefono}
+                onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })}
+                placeholder="461 123 4567"
+                className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Correo electrónico</label>
+              <input
+                type="email"
+                value={nuevoCliente.correo}
+                onChange={(e) => setNuevoCliente({ ...nuevoCliente, correo: e.target.value })}
+                placeholder="cliente@correo.com"
+                className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setMostrarFormCliente(false)}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={guardandoCliente}
+              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-60"
+            >
+              {guardandoCliente ? 'Guardando...' : 'Guardar cliente'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Modal/Panel para agregar equipo a un cliente */}
+      {clienteParaEquipo && (
+        <form
+          onSubmit={handleCrearEquipo}
+          className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold !text-white">
+              Registrar equipo para {clienteParaEquipo.nombre}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setClienteParaEquipo(null)}
+              className="text-xs text-slate-300 hover:text-white cursor-pointer"
+            >
+              Cerrar ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Categoría *</label>
+              <select
+                required
+                value={nuevoEquipo.categoria_id}
+                onChange={(e) =>
+                  setNuevoEquipo({ ...nuevoEquipo, categoria_id: e.target.value, caracteristicas: {} })
+                }
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-400"
+              >
+                <option value="">Selecciona categoría...</option>
+                {categorias.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Marca</label>
+              <input
+                type="text"
+                value={nuevoEquipo.marca}
+                onChange={(e) => setNuevoEquipo({ ...nuevoEquipo, marca: e.target.value })}
+                placeholder="Ej. Apple, HP, Nissan"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Modelo</label>
+              <input
+                type="text"
+                value={nuevoEquipo.modelo}
+                onChange={(e) => setNuevoEquipo({ ...nuevoEquipo, modelo: e.target.value })}
+                placeholder="Ej. MacBook Pro 14, Versa"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">No. Serie / Placas</label>
+              <input
+                type="text"
+                value={nuevoEquipo.numero_serie}
+                onChange={(e) => setNuevoEquipo({ ...nuevoEquipo, numero_serie: e.target.value })}
+                placeholder="Opcional"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-400"
+              />
+            </div>
+          </div>
+
+          {/* Campos dinámicos si la categoría los define en config/equipos.php */}
+          {categoriaSeleccionada?.campos?.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800">
+              {categoriaSeleccionada.campos.map((campo, idx) => {
+                const clave =
+                  typeof campo === 'string'
+                    ? campo
+                    : campo.nombre || campo.key || campo.campo || `campo_${idx}`;
+                const etiqueta =
+                  typeof campo === 'string'
+                    ? campo.replace(/_/g, ' ')
+                    : campo.etiqueta || campo.label || clave.replace(/_/g, ' ');
+
+                return (
+                  <div key={clave}>
+                    <label className="block text-xs font-medium text-slate-300 mb-1 capitalize">
+                      {etiqueta}
+                    </label>
+                    <input
+                      type={typeof campo === 'object' && campo.tipo === 'number' ? 'number' : 'text'}
+                      placeholder={typeof campo === 'object' ? campo.placeholder || '' : ''}
+                      value={nuevoEquipo.caracteristicas[clave] || ''}
+                      onChange={(e) =>
+                        setNuevoEquipo({
+                          ...nuevoEquipo,
+                          caracteristicas: {
+                            ...nuevoEquipo.caracteristicas,
+                            [clave]: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-400"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={guardandoEquipo}
+              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-60"
+            >
+              {guardandoEquipo ? 'Guardando equipo...' : 'Vincular equipo'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Buscador */}
+      <div className="relative max-w-md">
+        <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-3" />
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar cliente por nombre, correo o teléfono..."
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-brand-600"
+        />
       </div>
 
-      {/* Listado de Clientes */}
-      {clientesFiltrados.length === 0 ? (
-        <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-2">
-          <Users className="h-10 w-10 text-slate-300 mx-auto" />
-          <p className="text-base font-semibold text-slate-800">
-            No se encontraron clientes
-          </p>
-          <p className="text-sm text-slate-500">
-            Registra un nuevo cliente con el botón superior derecho.
+      {/* Listado de Clientes y sus Equipos */}
+      {loading ? (
+        <div className="py-12 flex justify-center">
+          <div className="w-7 h-7 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : clientesFiltrados.length === 0 ? (
+        <div className="bg-white p-10 rounded-2xl border border-slate-200 text-center space-y-2">
+          <Users className="h-9 w-9 text-slate-300 mx-auto" />
+          <p className="text-sm font-semibold text-slate-800">No hay clientes registrados</p>
+          <p className="text-xs text-slate-500">
+            Agrega tu primer cliente o espera a que agenden una cita desde tu página pública.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {clientesFiltrados.map((cliente) => (
-            <div
-              key={cliente.id}
-              className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between gap-4"
-            >
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center text-sm shrink-0">
-                      {(cliente.nombre || 'C')[0].toUpperCase()}
-                    </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {clientesFiltrados.map((cliente) => {
+            const equiposCliente = equipos.filter((eq) => eq.cliente_id === cliente.id);
+
+            return (
+              <div
+                key={cliente.id}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between gap-4"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
                       <h3 className="text-base font-bold text-slate-900">{cliente.nombre}</h3>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-0.5">
-                        <span className="inline-flex items-center gap-1">
-                          <Phone className="h-3.5 w-3.5 text-slate-400" />
-                          {cliente.telefono}
-                        </span>
+                      <div className="flex flex-wrap gap-3 text-xs text-slate-500 mt-1">
+                        {cliente.telefono && (
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="h-3.5 w-3.5 text-brand-600" />
+                            {cliente.telefono}
+                          </span>
+                        )}
                         {cliente.correo && (
                           <span className="inline-flex items-center gap-1">
-                            <Mail className="h-3.5 w-3.5 text-slate-400" />
+                            <Mail className="h-3.5 w-3.5 text-brand-600" />
                             {cliente.correo}
                           </span>
                         )}
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleEliminarCliente(cliente.id)}
+                      title="Eliminar cliente"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setClienteParaEquipo(cliente)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 transition cursor-pointer shrink-0"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Equipo</span>
-                  </button>
-                </div>
-
-                {cliente.notas && (
-                  <p className="text-xs text-slate-500 italic bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                    {cliente.notas}
-                  </p>
-                )}
-
-                {/* Equipos registrados del cliente */}
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Equipos / Unidades registradas ({cliente.equipos?.length || 0})
-                  </p>
-
-                  {!cliente.equipos || cliente.equipos.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-2">
-                      Aún no tiene equipos registrados.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {cliente.equipos.map((eq) => (
-                        <div
-                          key={eq.id}
-                          className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate">
-                              <Wrench className="h-3.5 w-3.5 text-brand-600 shrink-0" />
-                              <span>{eq.marca_modelo}</span>
-                            </p>
-                            <p className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                              <span>{eq.tipo}</span>
-                              <span>·</span>
-                              <span className="inline-flex items-center gap-0.5 font-mono">
-                                <Hash className="h-3 w-3" />
-                                {eq.serie_placa}
-                              </span>
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => navigate('/dashboard/ordenes')}
-                            title="Crear orden de servicio para este equipo"
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-slate-300 text-slate-700 hover:border-brand-600 hover:text-brand-600 transition cursor-pointer shrink-0"
-                          >
-                            <ClipboardPlus className="h-3.5 w-3.5" />
-                            <span>Nueva orden</span>
-                          </button>
-                        </div>
-                      ))}
+                  {/* Equipos del cliente */}
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-600 inline-flex items-center gap-1.5">
+                        <Laptop className="h-3.5 w-3.5 text-brand-600" />
+                        Equipos / Unidades ({equiposCliente.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setClienteParaEquipo(cliente)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Agregar equipo</span>
+                      </button>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Modal: Registrar Nuevo Cliente */}
-      {modalClienteOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Registrar nuevo cliente</h2>
-              <button
-                type="button"
-                onClick={() => setModalClienteOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCrearCliente} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nombre completo *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nuevoCliente.nombre}
-                  onChange={(e) =>
-                    setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })
-                  }
-                  placeholder="Ej. Roberto Hernández"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Teléfono / WhatsApp *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={nuevoCliente.telefono}
-                    onChange={(e) =>
-                      setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })
-                    }
-                    placeholder="461 123 4567"
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Correo electrónico
-                  </label>
-                  <input
-                    type="email"
-                    value={nuevoCliente.correo}
-                    onChange={(e) =>
-                      setNuevoCliente({ ...nuevoCliente, correo: e.target.value })
-                    }
-                    placeholder="cliente@correo.com"
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Notas del cliente
-                </label>
-                <input
-                  type="text"
-                  value={nuevoCliente.notas}
-                  onChange={(e) =>
-                    setNuevoCliente({ ...nuevoCliente, notas: e.target.value })
-                  }
-                  placeholder="Preferencias de contacto, facturación, etc."
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                />
-              </div>
-
-              {/* Primer equipo opcional */}
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Smartphone className="h-4 w-4 text-brand-600" />
-                  <span>Registrar primer equipo / unidad (Opcional)</span>
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Tipo
-                    </label>
-                    <input
-                      type="text"
-                      value={nuevoCliente.equipo_tipo}
-                      onChange={(e) =>
-                        setNuevoCliente({ ...nuevoCliente, equipo_tipo: e.target.value })
-                      }
-                      placeholder="Laptop / Auto / Lavadora"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Serie, IMEI o Placa
-                    </label>
-                    <input
-                      type="text"
-                      value={nuevoCliente.equipo_serie_placa}
-                      onChange={(e) =>
-                        setNuevoCliente({
-                          ...nuevoCliente,
-                          equipo_serie_placa: e.target.value,
-                        })
-                      }
-                      placeholder="Ej. SN-99201 / GTM-451"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                    />
+                    {equiposCliente.length === 0 ? (
+                      <p className="text-xs text-slate-400">Sin equipos registrados aún.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {equiposCliente.map((eq) => (
+                          <span
+                            key={eq.id}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium"
+                          >
+                            {[eq.marca, eq.modelo, eq.nombre].filter(Boolean).join(' ') || `Equipo #${eq.id}`}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Marca y modelo
-                  </label>
-                  <input
-                    type="text"
-                    value={nuevoCliente.equipo_marca_modelo}
-                    onChange={(e) =>
-                      setNuevoCliente({
-                        ...nuevoCliente,
-                        equipo_marca_modelo: e.target.value,
-                      })
-                    }
-                    placeholder="Ej. Dell Inspiron 15 / Nissan Sentra 2020"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                  />
-                </div>
               </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setModalClienteOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold cursor-pointer"
-                >
-                  Guardar cliente
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Agregar Equipo a Cliente Existente */}
-      {clienteParaEquipo && (
-        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">Agregar equipo</h2>
-                <p className="text-xs text-slate-500">Cliente: {clienteParaEquipo.nombre}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setClienteParaEquipo(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAgregarEquipo} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tipo de unidad *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nuevoEquipo.tipo}
-                  onChange={(e) => setNuevoEquipo({ ...nuevoEquipo, tipo: e.target.value })}
-                  placeholder="Ej. Laptop, Celular, Vehículo, Lavadora"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Marca y modelo *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nuevoEquipo.marca_modelo}
-                  onChange={(e) =>
-                    setNuevoEquipo({ ...nuevoEquipo, marca_modelo: e.target.value })
-                  }
-                  placeholder="Ej. MacBook Air M2 / Lavadora LG 19kg"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Número de serie, IMEI o Placa
-                </label>
-                <input
-                  type="text"
-                  value={nuevoEquipo.serie_placa}
-                  onChange={(e) =>
-                    setNuevoEquipo({ ...nuevoEquipo, serie_placa: e.target.value })
-                  }
-                  placeholder="Ej. C02XY123MD6M"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-brand-600"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setClienteParaEquipo(null)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold cursor-pointer"
-                >
-                  Guardar equipo
-                </button>
-              </div>
-            </form>
-          </div>
+            );
+          })}
         </div>
       )}
     </div>

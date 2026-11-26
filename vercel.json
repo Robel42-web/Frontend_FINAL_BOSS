@@ -1,13 +1,23 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://TU-API.onrender.com/api/:path*" },
-    { "source": "/sanctum/:path*", "destination": "https://TU-API.onrender.com/sanctum/:path*" },
-    { "source": "/auth/google/:path*", "destination": "https://TU-API.onrender.com/auth/google/:path*" },
+    { "source": "/api/:path*", "destination": "https://repairhub-api-1zjp.onrender.com/api/:path*" },
+    { "source": "/sanctum/:path*", "destination": "https://repairhub-api-1zjp.onrender.com/sanctum/:path*" },
+    { "source": "/auth/google", "destination": "[https://repairhub-api-1zjp.onrender.com/auth/google](https://repairhub-api-1zjp.onrender.com/auth/google)" },
+    { "source": "/auth/google/:path*", "destination": "https://repairhub-api-1zjp.onrender.com/auth/google/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
-    { "source": "/api/:path*", "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }] },
-    { "source": "/sanctum/:path*", "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }] },
-    { "source": "/auth/google/:path*", "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }] }
+    {
+      "source": "/api/:path*",
+      "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }]
+    },
+    {
+      "source": "/sanctum/:path*",
+      "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }]
+    },
+    {
+      "source": "/auth/google/:path*",
+      "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }]
+    }
   ]
 }
